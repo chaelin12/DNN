@@ -13,6 +13,7 @@ import layers.OutputLayer;
 public class NeuralNetwork {
 
     private Layer[] layers; 
+
     private final List<Image> trainImages = DataReader.readData("C:\\Users\\Chaelin\\Desktop\\자료\\Back Propagation\\MNIST 구현\\DNN\\src\\data\\mnist_train.csv");
     private final List<Image> testImages  = DataReader.readData("C:\\Users\\Chaelin\\Desktop\\자료\\Back Propagation\\MNIST 구현\\DNN\\src\\data\\mnist_test.csv");
     
@@ -40,10 +41,21 @@ public class NeuralNetwork {
         size = hiddenLayers.length + 1;
         currInput = new double[inputSize];
         initLayers();
+        preprocessData(trainImages);
+        preprocessData(testImages);
         visualizer = new TrainingVisualizer();
         visualizer.showWindow();
     }
-
+    //min-max 정규화
+    private void preprocessData(List<Image> images) {
+        for (Image img : images) {
+            double[] data = img.getData();
+            for (int i = 0; i < data.length; i++) {
+                // 원본 데이터를 덮어씌움 (메모리 절약 + 속도 향상)
+                data[i] = data[i] / 255.0; 
+            }
+        }
+    }
     private void initLayers(){
         layers = new Layer[size];
         layers[0] = new HiddenLayer(currInput, hiddenLayers[0]);
@@ -73,11 +85,13 @@ public class NeuralNetwork {
         }
     }
 
-    private void updateWeightsAndBiases(int t, int currentBatchSize){
+    
+    // Adam은 내부적으로 스케일을 조정하므로 배치 사이즈로 나누면 학습이 너무 느려짐
+    private void updateWeightsAndBiases(int t){
         double beta1 = 0.9;
         double beta2 = 0.999;
         double epsilon = 1e-8;
-        double q = LEARNING_RATE/ currentBatchSize; 
+        double q = LEARNING_RATE; 
         
         for(Layer l : layers){
             l.updateWeightandBiasAdam(t, q, beta1, beta2, epsilon);
@@ -90,7 +104,8 @@ public class NeuralNetwork {
         OutputLayer o = (OutputLayer) layers[size - 1];
         
         for(Image img : dataSet){
-            layers[0].setInputs(img.getData());
+            currInput = img.getData();
+            layers[0].setInputs(currInput);
             for(int i=0;i<layers.length;i++){
                 layers[i].calculateOutput();
             }
@@ -137,11 +152,15 @@ public class NeuralNetwork {
             double currentEpochTrainLoss = 0;
             int currentEpochCorrect = 0;
 
+            //전체 데이터를 배치 사이즈만큼 건너뛰며 반복
             for (int i = 0; i < trainImages.size(); i += batchSize) {
                 int currentBatchSize = Math.min(batchSize, trainImages.size() - i);
                 
+                // 1. 기울기 초기화 (배치 시작 전)
                 for (Layer l : layers) l.resetGradients();
 
+                // 배치 사이즈만큼 기울기 누적 (Accumulate)
+                // 이 안에서는 가중치 업데이트 X
                 for (int b = 0; b < currentBatchSize; b++) {
                     Image img = trainImages.get(i + b);
                     int label = img.getLabel();
@@ -149,7 +168,6 @@ public class NeuralNetwork {
 
                     double[] trueOutput = new double[outputSize];
                     trueOutput[label] = 1.0;
-
 
                     forwardPropagation();
                     
@@ -160,10 +178,12 @@ public class NeuralNetwork {
                         currentEpochCorrect++;
                     }
 
-                    backwardPropagation(trueOutput);
+                    backwardPropagation(trueOutput); // 기울기 누적 (+=)
                 }
+                
+                // 2. 가중치 업데이트 (배치 처리가 끝난 후 딱 1번만 수행)
                 timestep++;
-                updateWeightsAndBiases(timestep, currentBatchSize);
+                updateWeightsAndBiases(timestep);
             }
 
             double avgTrainLoss = currentEpochTrainLoss / trainImages.size();
@@ -176,12 +196,9 @@ public class NeuralNetwork {
             historyTestLoss.add(testMetrics[0]);
             historyTestAcc.add(testMetrics[1]);
 
-             // [에포크 종료 시간 및 계산]
             long epochEndTime = System.currentTimeMillis();
             double epochTime = (epochEndTime - epochStartTime) / 1000.0;
 
-
-             // 콘솔 출력에 Time 항목 추가
             System.out.printf("Epoch %d Result -> Train Loss: %.5f, Acc: %.2f%% | Test Loss: %.5f, Acc: %.2f%% | Time: %.2fs\n", 
                     (epoch+1), avgTrainLoss, avgTrainAcc * 100, testMetrics[0], testMetrics[1] * 100, epochTime);
 
@@ -191,15 +208,10 @@ public class NeuralNetwork {
         }
         System.out.println("Training Finished.");
 
-        // --- [수정됨] 최종 결과 출력 (Train 결과 + Test 결과) ---
-        // 마지막 Epoch에서의 Train 값은 이미 avgTrainLoss, avgTrainAcc에 있습니다.
-        // Test 값은 test를 한 번 더 호출해서 얻거나, 마지막 기록을 사용하면 됩니다.
-        // [전체 종료 시간 및 출력]
         long endTime = System.currentTimeMillis();
         double totalTimeSeconds = (endTime - startTime) / 1000.0;
 
         double[] finalTestMetrics = test(testImages);
-        // Train은 마지막 Epoch 결과값을 그대로 사용 (가장 최근 학습 상태)
         double finalTrainLoss = historyTrainLoss.get(historyTrainLoss.size() - 1);
         double finalTrainAcc  = historyTrainAcc.get(historyTrainAcc.size() - 1);
 
@@ -215,9 +227,7 @@ public class NeuralNetwork {
         System.out.printf("Final Test Accuracy  : %.2f%%\n", finalTestMetrics[1] * 100.0);
         System.out.println("=".repeat(40));
 
-         // 전체 소요 시간 출력
-            System.out.printf("Total Training Time  : %.3f seconds\n", totalTimeSeconds);
-            System.out.println("=".repeat(40));
-        }
+        System.out.printf("Total Training Time  : %.3f seconds\n", totalTimeSeconds);
+        System.out.println("=".repeat(40));
     }
-    
+}
