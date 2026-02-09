@@ -10,6 +10,7 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JFrame;
@@ -21,7 +22,22 @@ public class TrainingVisualizer extends JPanel {
     private List<Double> trainAcc = new ArrayList<>();
     private List<Double> testAcc = new ArrayList<>();
     
-    private int maxEpochs = 0; // 총 에포크 수 (X축 고정용)
+    // *** 이 부분이 반드시 있어야 합니다 ***
+    public static class ImageSample {
+        public double[] pixels;
+        public int actualLabel;
+        public int predictedLabel;
+
+        public ImageSample(double[] pixels, int actual, int predicted) {
+            this.pixels = pixels;
+            this.actualLabel = actual;
+            this.predictedLabel = predicted;
+        }
+    }
+    // **********************************
+    
+    private List<ImageSample> currentSamples = new ArrayList<>();
+    private int maxEpochs = 0; 
     private JFrame frame;
 
     public TrainingVisualizer() {
@@ -29,22 +45,20 @@ public class TrainingVisualizer extends JPanel {
         trainAcc.add(0.0); testAcc.add(0.0);
     }
 
-    // NeuralNetwork 생성자에서 호출 (X축 고정)
     public void setMaxEpochs(int epochs) {
         this.maxEpochs = epochs;
         repaint();
     }
 
     public void showWindow() {
-        frame = new JFrame("Training Monitor");
+        frame = new JFrame("Training Monitor & Prediction Check");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         
         int windowWidth = 1200;
-        int windowHeight = 600;
+        int windowHeight = 850;
         frame.setSize(windowWidth, windowHeight);
         frame.add(this);
 
-        // 창을 화면 우측 하단에 배치
         try {
             GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
             Rectangle bounds = ge.getMaximumWindowBounds(); 
@@ -58,11 +72,13 @@ public class TrainingVisualizer extends JPanel {
         frame.setVisible(true);
     }
 
-    public void updateData(List<Double> trL, List<Double> teL, List<Double> trA, List<Double> teA) {
+    // 데이터 업데이트 메서드
+    public void updateData(List<Double> trL, List<Double> teL, List<Double> trA, List<Double> teA, List<ImageSample> samples) {
         this.trainLoss = new ArrayList<>(trL);
         this.testLoss = new ArrayList<>(teL);
         this.trainAcc = new ArrayList<>(trA);
         this.testAcc = new ArrayList<>(teA);
+        this.currentSamples = samples;
         repaint();
     }
 
@@ -79,19 +95,102 @@ public class TrainingVisualizer extends JPanel {
 
         int w = getWidth();
         int h = getHeight();
+        
+        int graphHeight = (int)(h * 0.6);
         int graphWidth = w / 2;
         
-        // 1. Loss 그래프 (왼쪽) -> isAcc = false
-        drawGraph(g2, 0, 0, graphWidth, h, 
+        drawGraph(g2, 0, 0, graphWidth, graphHeight, 
                   trainLoss, testLoss, 
                   "Train & Test Loss", "Loss", 
                   3.0, 0.6, false);
 
-        // 2. Accuracy 그래프 (오른쪽) -> isAcc = true
-        drawGraph(g2, graphWidth, 0, graphWidth, h, 
+        drawGraph(g2, graphWidth, 0, graphWidth, graphHeight, 
                   trainAcc, testAcc, 
                   "Train & Test Accuracy", "Accuracy", 
                   1.0, 0.2, true);
+        
+        drawImageSamples(g2, 0, graphHeight, w, h - graphHeight);
+    }
+    
+    private void drawImageSamples(Graphics2D g2, int x, int y, int w, int h) {
+        if (currentSamples == null || currentSamples.isEmpty()) return;
+
+        g2.setColor(Color.LIGHT_GRAY);
+        g2.drawLine(x, y, x + w, y); 
+
+        g2.setColor(Color.BLACK);
+        g2.setFont(new Font("SansSerif", Font.BOLD, 16));
+        g2.drawString("Sample Predictions (Epoch Result)", x + 20, y + 30);
+
+        int sampleCount = currentSamples.size();
+        int imgSize = 28; 
+        int scale = 4;    
+        int displaySize = imgSize * scale; 
+        int gap = 30;     
+        
+        int totalWidth = sampleCount * displaySize + (sampleCount - 1) * gap;
+        int startX = (w - totalWidth) / 2;
+        int startY = y + 110; 
+
+        for (int i = 0; i < sampleCount; i++) {
+            ImageSample sample = currentSamples.get(i);
+            int drawX = startX + i * (displaySize + gap);
+            
+            // 1. 해당 이미지에서 가장 큰 값 찾기 (Contrast 증폭용)
+            double maxVal = 0.0;
+            for (double v : sample.pixels) {
+                if (v > maxVal) maxVal = v;
+            }
+            if (maxVal <= 0) maxVal = 1.0; // 0으로 나누기 방지
+
+            BufferedImage bImg = new BufferedImage(imgSize, imgSize, BufferedImage.TYPE_INT_RGB);
+            
+            for (int r = 0; r < imgSize; r++) {
+                for (int c = 0; c < imgSize; c++) {
+                    double rawVal = sample.pixels[r * imgSize + c];
+                    
+                    // 2. 최대값을 기준으로 정규화 (0.0 ~ 1.0) -> 가장 진한 부분이 1.0이 됨
+                    double normalized = rawVal / maxVal;
+                    
+                    // 3. 색상 반전: (1.0 - 값) -> 값이 클수록(글씨) 0(검정)에 가까워짐
+                    // 배경(0) -> 1.0 -> 255 (흰색)
+                    // 글씨(1) -> 0.0 -> 0 (검정)
+                    int gray = (int)((1.0 - normalized) * 255);
+                    
+                    // 범위 안전장치
+                    if (gray < 0) gray = 0;
+                    if (gray > 255) gray = 255;
+
+                    // 4. ARGB 색상 생성 (불투명)
+                    int rgb = (0xFF << 24) | (gray << 16) | (gray << 8) | gray;
+                    bImg.setRGB(c, r, rgb);
+                }
+            }
+            
+            g2.drawImage(bImg, drawX, startY, displaySize, displaySize, null);
+            g2.setColor(Color.BLACK);
+            g2.drawRect(drawX, startY, displaySize, displaySize); // 테두리
+
+            // 텍스트 그리기
+            String predText = "Pred: " + sample.predictedLabel;
+            String actText = "Act: " + sample.actualLabel;
+            
+            g2.setFont(new Font("SansSerif", Font.BOLD, 14));
+            
+            if (sample.predictedLabel == sample.actualLabel) {
+                g2.setColor(new Color(0, 150, 0)); 
+            } else {
+                g2.setColor(Color.RED); 
+            }
+            
+            FontMetrics fm = g2.getFontMetrics();
+            int tx = drawX + (displaySize - fm.stringWidth(predText)) / 2;
+            g2.drawString(predText, tx, startY - 20);
+            
+            g2.setColor(Color.BLACK);
+            int ax = drawX + (displaySize - fm.stringWidth(actText)) / 2;
+            g2.drawString(actText, ax, startY + displaySize + 20);
+        }
     }
 
     private void drawGraph(Graphics2D g2, int xOffset, int yOffset, int width, int height, 
@@ -109,7 +208,6 @@ public class TrainingVisualizer extends JPanel {
         int graphW = width - (paddingLeft + paddingRight);
         int graphH = height - (paddingTop + paddingBottom);
 
-        // X축 범위 계산
         int dataSize = trainData.size();
         int currentMax = dataSize - 1;
         if (currentMax < 0) currentMax = 0;
@@ -122,19 +220,16 @@ public class TrainingVisualizer extends JPanel {
             if (xAxisMax == 0) xAxisMax = 10;
         }
 
-        // --- 1. 축 그리기 ---
         g2.setColor(Color.BLACK);
         g2.setStroke(new BasicStroke(1.5f));
         g2.drawLine(graphX, graphY + graphH, graphX + graphW, graphY + graphH);
         g2.drawLine(graphX, graphY, graphX, graphY + graphH);
 
-        // --- 2. 그래프 제목 ---
         g2.setFont(new Font("SansSerif", Font.BOLD, 18));
         FontMetrics fm = g2.getFontMetrics();
         int titleX = xOffset + (width - fm.stringWidth(title)) / 2;
         g2.drawString(title, titleX, yOffset + 35);
 
-        // --- 3. Y축 제목 ---
         g2.setFont(new Font("SansSerif", Font.BOLD, 14));
         fm = g2.getFontMetrics();
         AffineTransform originalTransform = g2.getTransform();
@@ -142,12 +237,10 @@ public class TrainingVisualizer extends JPanel {
         g2.drawString(yLabelStr, graphX - 45 - fm.stringWidth(yLabelStr)/2, graphY + graphH / 2);
         g2.setTransform(originalTransform);
 
-        // --- 4. X축 제목 ---
         String xLabel = "Epoch";
         fm = g2.getFontMetrics();
         g2.drawString(xLabel, graphX + (graphW - fm.stringWidth(xLabel)) / 2, graphY + graphH + 45);
 
-        // --- 5. Y축 눈금 ---
         g2.setFont(new Font("SansSerif", Font.PLAIN, 12));
         int numTicks = (int)(maxY / tickStep);
         for (int i = 0; i <= numTicks; i++) {
@@ -160,7 +253,6 @@ public class TrainingVisualizer extends JPanel {
             g2.drawString(tickStr, graphX - fm.stringWidth(tickStr) - 10, py + 5);
         }
 
-        // --- 6. X축 눈금 ---
         int xStep = 10; 
         for (int i = 0; i <= xAxisMax; i += xStep) {
             int px = graphX + (int)((double)i / xAxisMax * graphW);
@@ -172,25 +264,15 @@ public class TrainingVisualizer extends JPanel {
             g2.drawString(tickStr, px - fm.stringWidth(tickStr)/2, graphY + graphH + 20);
         }
 
-        // --- 7. 데이터 선 ---
         drawLinesAndPoints(g2, trainData, graphX, graphY, graphW, graphH, maxY, xAxisMax, Color.BLUE);
         drawLinesAndPoints(g2, testData, graphX, graphY, graphW, graphH, maxY, xAxisMax, Color.RED);
 
-        // --- 8. [수정됨] 범례 (Legend) 위치 스마트 배치 ---
-        // 박스 크기: 110 x 50, 여백 10px
-        int legendX = graphX + graphW - 110 - 10; // 오른쪽 정렬
+        int legendX = graphX + graphW - 110 - 10; 
         int legendY;
-
-        if (isAcc) {
-            // Accuracy 그래프: 값이 위로 올라가므로 범례는 '아래'에 위치
-            legendY = graphY + graphH - 50 - 10;
-        } else {
-            // Loss 그래프: 값이 아래로 떨어지므로 범례는 '위'에 위치 (요청하신 부분)
-            legendY = graphY + 10;
-        }
+        if (isAcc) legendY = graphY + graphH - 50 - 10;
+        else legendY = graphY + 10;
         drawLegend(g2, legendX, legendY);
 
-        // --- 9. 중앙 텍스트 ---
         if (!trainData.isEmpty()) {
             double lastTrain = trainData.get(trainData.size() - 1);
             double lastTest = testData.get(testData.size() - 1);
@@ -211,7 +293,7 @@ public class TrainingVisualizer extends JPanel {
             g2.drawString(testText, cx - fm.stringWidth(testText) / 2, cy + 15);
         }
     }
-
+    
     private void drawLinesAndPoints(Graphics2D g2, List<Double> data, int x, int y, int w, int h, double maxY, int xRange, Color c) {
         if (data.isEmpty()) return;
         g2.setColor(c);
@@ -238,14 +320,11 @@ public class TrainingVisualizer extends JPanel {
     private void drawLegend(Graphics2D g2, int x, int y) {
         g2.setColor(Color.LIGHT_GRAY);
         g2.drawRect(x - 10, y - 5, 110, 50);
-
         g2.setFont(new Font("SansSerif", Font.BOLD, 12));
-        
         g2.setColor(Color.BLUE);
         g2.fillRect(x, y + 5, 10, 10);
         g2.setColor(Color.BLACK);
         g2.drawString("Train", x + 15, y + 15);
-
         g2.setColor(Color.RED);
         g2.fillRect(x, y + 25, 10, 10);
         g2.setColor(Color.BLACK);
