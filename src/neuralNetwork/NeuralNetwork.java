@@ -14,7 +14,6 @@ public class NeuralNetwork {
 
     private Layer[] layers; 
 
-    // 경로 부분은 본인의 환경에 맞게 유지하세요.
     private final List<Image> trainImages = DataReader.readData("C:\\Users\\Chaelin\\Desktop\\자료\\Back Propagation\\MNIST 구현\\DNN\\src\\data\\mnist_train.csv");
     private final List<Image> testImages  = DataReader.readData("C:\\Users\\Chaelin\\Desktop\\자료\\Back Propagation\\MNIST 구현\\DNN\\src\\data\\mnist_test.csv");
     
@@ -40,15 +39,15 @@ public class NeuralNetwork {
         size = hiddenLayers.length + 1;
         currInput = new double[inputSize];
         initLayers();
-        preprocessData(trainImages);
-        preprocessData(testImages);
+        min_max(trainImages);
+        min_max(testImages);
         
         visualizer = new TrainingVisualizer();
         visualizer.showWindow();
     }
 
-    // ... (기존 preprocessData, initLayers, forwardPropagation 등은 그대로 유지) ...
-    private void preprocessData(List<Image> images) {
+
+    private void min_max(List<Image> images) {
         for (Image img : images) {
             double[] data = img.getData();
             for (int i = 0; i < data.length; i++) {
@@ -57,6 +56,7 @@ public class NeuralNetwork {
         }
     }
     
+
     private void initLayers(){
         layers = new Layer[size];
         layers[0] = new HiddenLayer(currInput, hiddenLayers[0]);
@@ -67,10 +67,11 @@ public class NeuralNetwork {
         currOutput = layers[size - 1].getOutputs();
     }
 
+
     public void forwardPropagation(){
-        layers[0].setInputs(currInput);
+        layers[0].setInputs(currInput);//입력값 설정
         for(int i=0; i<size; i++){
-            layers[i].calculateOutput();
+            layers[i].calculateOutput();//입력값을 통과시킴
         }
     }
 
@@ -84,7 +85,7 @@ public class NeuralNetwork {
             h.calculateLocalGradients(nextGradient);
             nextGradient = layers[i].get_dL_dx();
         }
-    }
+    }//dL_dz -> dL_dw, dL_dx, dL_db 구함
 
     private void updateWeightsAndBiases(int t){
         double beta1 = 0.9;
@@ -96,7 +97,7 @@ public class NeuralNetwork {
         }
     }
     
-    // ... (기존 test, getPredictedLabel 등 유지) ...
+   
     private double[] test(List<Image> dataSet) {
         double totalLoss = 0;
         int correctCount = 0;
@@ -104,10 +105,7 @@ public class NeuralNetwork {
         
         for(Image img : dataSet){
             currInput = img.getData();
-            layers[0].setInputs(currInput);
-            for(int i=0;i<layers.length;i++){
-                layers[i].calculateOutput();
-            }
+            forwardPropagation();
             int label = img.getLabel();
             double[] target = new double[outputSize]; 
             target[label] = 1.0;
@@ -118,9 +116,11 @@ public class NeuralNetwork {
                 correctCount++;
             }
         }
+
         return new double[] { totalLoss / dataSet.size(), (double) correctCount / dataSet.size() };
     }
 
+    //output 배열 : 각 숫자(0~9)일 확률이 들어있음
     private int getPredictedLabel(double[] output) {
         int predicted = 0;
         double maxProb = output[0];
@@ -131,7 +131,7 @@ public class NeuralNetwork {
             }
         }
         return predicted;
-    }
+    }//가장 큰 확률을 가진 숫자의 인덱스를 반환
     
     // *** 시각화용 샘플 생성 메서드 추가 ***
     private List<TrainingVisualizer.ImageSample> generateVisualizationSamples() {
@@ -144,10 +144,9 @@ public class NeuralNetwork {
         for(int i=0; i<sampleSize; i++) {
             Image img = testImages.get(i);
             
-            // 순전파 수행 (주의: 이 과정은 학습 상태(Gradient)에 영향 주지 않으므로 안전)
+            // 순전파 수행 
             currInput = img.getData();
-            layers[0].setInputs(currInput);
-            for(Layer l : layers) l.calculateOutput();
+            forwardPropagation();
             
             double[] out = layers[size-1].getOutputs();
             int predicted = getPredictedLabel(out);
@@ -161,43 +160,42 @@ public class NeuralNetwork {
     }
 
     public void train_test(int epochs, int batchSize) {
-        long startTime = System.currentTimeMillis();
+        long startTime = System.currentTimeMillis();// 최종 수행 시간 계산
         int timestep = 0;
-        visualizer.setMaxEpochs(epochs); // X축 고정
 
-        System.out.println("Training Started..."); 
+        System.out.println("학습 시작>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"); 
         OutputLayer outputLayer = (OutputLayer) layers[size - 1];
 
         for (int epoch = 0; epoch < epochs; epoch++) {
 
-            long epochStartTime = System.currentTimeMillis();
-            System.out.println("\nEpoch " + (epoch + 1) + " started...");
+            long epochStartTime = System.currentTimeMillis();//epoch 별 수행 시간
+            System.out.println("\n------------------------------------------Epoch " + (epoch + 1) + "------------------------------------------");
             Collections.shuffle(trainImages);
 
-            double currentEpochTrainLoss = 0;
-            int currentEpochCorrect = 0;
+            double currentEpochTrainLoss = 0;//epoch별 로스
+            int currentEpochCorrect = 0;//epoch별 정답 횟수
 
-            for (int i = 0; i < trainImages.size(); i += batchSize) {
-                int currentBatchSize = Math.min(batchSize, trainImages.size() - i);
+            for (int i = 0; i < trainImages.size(); i += batchSize) {// 전체 데이터를 batch사이즈 만큼 건너뛰며 접근
+                int currentBatchSize = Math.min(batchSize, trainImages.size() - i);// 배치 사이즈만큼 딱 떨어지지 않을 때
                 
-                for (Layer l : layers) l.resetGradients();
+                for (Layer l : layers) l.resetGradients();//신경망 통과 전 기울기 초기화
 
-                for (int b = 0; b < currentBatchSize; b++) {
-                    Image img = trainImages.get(i + b);
-                    int label = img.getLabel();
-                    currInput = img.getData();
+                for (int b = 0; b < currentBatchSize; b++) {//배치(b)의 첫번째 부터 끝까지
+                    Image img = trainImages.get(i + b);//학습 이미지의 배치 번째 데이터를 가져옴
+                    int label = img.getLabel();//정답
+                    currInput = img.getData();//28*28 픽셀의 그림
 
-                    double[] trueOutput = new double[outputSize];
-                    trueOutput[label] = 1.0;
+                    double[] target = new double[outputSize];// 출력 노드 수만큼 정답 배열 생성
+                    target[label] = 1.0;//정답 값(=인덱스)에 해당하는 값을 target 배열에서 1로 설정
 
                     forwardPropagation();
                     currOutput = layers[size - 1].getOutputs(); 
                     
-                    currentEpochTrainLoss += outputLayer.computeLoss(trueOutput);
+                    currentEpochTrainLoss += outputLayer.computeLoss(target);
                     if (getPredictedLabel(currOutput) == label) {
                         currentEpochCorrect++;
                     }
-                    backwardPropagation(trueOutput);
+                    backwardPropagation(target);
                 }
                 
                 timestep++;
@@ -220,8 +218,8 @@ public class NeuralNetwork {
             long epochEndTime = System.currentTimeMillis();
             double epochTime = (epochEndTime - epochStartTime) / 1000.0;
 
-            System.out.printf("Epoch %d Result -> Train Loss: %.5f, Acc: %.2f%% | Test Loss: %.5f, Acc: %.2f%% | Time: %.2fs\n", 
-                    (epoch+1), avgTrainLoss, avgTrainAcc * 100, testMetrics[0], testMetrics[1] * 100, epochTime);
+            System.out.printf("Result -> Train Loss: %.5f, Acc: %.2f%% | Test Loss: %.5f, Acc: %.2f%% | Time: %.2fs\n", 
+                     avgTrainLoss, avgTrainAcc * 100, testMetrics[0], testMetrics[1] * 100, epochTime);
 
             SwingUtilities.invokeLater(() -> {
                 // 샘플 리스트도 함께 전달
