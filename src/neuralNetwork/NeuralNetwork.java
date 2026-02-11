@@ -87,13 +87,13 @@ public class NeuralNetwork {
         }
     }//dL_dz -> dL_dw, dL_dx, dL_db 구함
 
-    private void updateWeightsAndBiases(int t){
+    private void updateWeightsAndBiases(int t, int b){ 
         double beta1 = 0.9;
         double beta2 = 0.999;
         double epsilon = 1e-8;
         double q = LEARNING_RATE; 
         for(Layer l : layers){
-            l.updateWeightandBiasAdam(t, q, beta1, beta2, epsilon);
+            l.updateWeightandBiasAdam(t, q, beta1, beta2, epsilon, b);
         }
     }
     
@@ -111,7 +111,7 @@ public class NeuralNetwork {
             target[label] = 1.0;
 
             double[] outputs = layers[size - 1].getOutputs();
-            totalLoss += o.computeLoss(target);
+            totalLoss += o.calculateLoss(target);
             if(getPredictedLabel(outputs) == label){
                 correctCount++;
             }
@@ -189,40 +189,42 @@ public class NeuralNetwork {
                     target[label] = 1.0;//정답 값(=인덱스)에 해당하는 값을 target 배열에서 1로 설정
 
                     forwardPropagation();
-                    currOutput = layers[size - 1].getOutputs(); 
+                    currOutput = layers[size - 1].getOutputs(); //순전파 시행 후 나온 output들을 현재 층의 output 배열에 저장
                     
-                    currentEpochTrainLoss += outputLayer.computeLoss(target);
-                    if (getPredictedLabel(currOutput) == label) {
+                    currentEpochTrainLoss += outputLayer.calculateLoss(target);//정답 배열과 softmax 결과값으로 오차 계산
+                    if (getPredictedLabel(currOutput) == label) {// 가장 큰 확률의 수가 정답값(인덱스)랑 같으면 현재 epoch에서 맞은 수 ++
                         currentEpochCorrect++;
                     }
-                    backwardPropagation(target);
+                    backwardPropagation(target);//역전파 진행
                 }
                 
-                timestep++;
-                updateWeightsAndBiases(timestep);
+                timestep++;//현재 업데이트 수
+                updateWeightsAndBiases(timestep,batchSize);
             }
 
-            double avgTrainLoss = currentEpochTrainLoss / trainImages.size();
-            double avgTrainAcc = (double) currentEpochCorrect / trainImages.size();
+            double avgTrainLoss = currentEpochTrainLoss / trainImages.size();//평균 loss
+            double avgTrainAcc = (double) currentEpochCorrect / trainImages.size();//평균 정확률
 
             double[] testMetrics = test(testImages);
             
             historyTrainLoss.add(avgTrainLoss);
             historyTrainAcc.add(avgTrainAcc);
+            //학습 후 평균 오차와 정확도 반환
             historyTestLoss.add(testMetrics[0]);
             historyTestAcc.add(testMetrics[1]);
+            //test 후 평균 오차와 정확도 반환
             
             // *** 시각화용 샘플 생성 ***
             List<TrainingVisualizer.ImageSample> samples = generateVisualizationSamples();
 
             long epochEndTime = System.currentTimeMillis();
-            double epochTime = (epochEndTime - epochStartTime) / 1000.0;
+            double epochTime = (epochEndTime - epochStartTime) / 1000.0;// epoch가 걸린 시간
 
-            System.out.printf("Result -> Train Loss: %.5f, Acc: %.2f%% | Test Loss: %.5f, Acc: %.2f%% | Time: %.2fs\n", 
+            System.out.printf("\nResult -> Train Loss: %.5f, Acc: %.2f%% | Test Loss: %.5f, Acc: %.2f%% | Time: %.2fs\n", 
                      avgTrainLoss, avgTrainAcc * 100, testMetrics[0], testMetrics[1] * 100, epochTime);
 
             SwingUtilities.invokeLater(() -> {
-                // 샘플 리스트도 함께 전달
+                // 샘플 리스트도 함께 전달  
                 visualizer.updateData(historyTrainLoss, historyTestLoss, historyTrainAcc, historyTestAcc, samples);
             });
         }
