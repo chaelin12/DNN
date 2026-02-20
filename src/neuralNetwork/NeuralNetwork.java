@@ -39,7 +39,7 @@ public class NeuralNetwork {
         size = hiddenLayers.length + 1;
         currInput = new double[inputSize];
         initLayers();
-        min_max(trainImages);
+        min_max(trainImages); 
         min_max(testImages);
         
         visualizer = new TrainingVisualizer();
@@ -133,37 +133,12 @@ public class NeuralNetwork {
         return predicted;
     }//가장 큰 확률을 가진 숫자의 인덱스를 반환
     
-    // *** 시각화용 샘플 생성 메서드 추가 ***
-    private List<TrainingVisualizer.ImageSample> generateVisualizationSamples() {
-        List<TrainingVisualizer.ImageSample> samples = new ArrayList<>();
-        Collections.shuffle(testImages); // 테스트 데이터 섞기
-        
-        // 10개만 뽑아서 예측 수행
-        int sampleSize = Math.min(10, testImages.size());
-        
-        for(int i=0; i<sampleSize; i++) {
-            Image img = testImages.get(i);
-            
-            // 순전파 수행 
-            currInput = img.getData();
-            forwardPropagation();
-            
-            double[] out = layers[size-1].getOutputs();
-            int predicted = getPredictedLabel(out);
-            
-            // 원본 데이터 복사 (화면에 그리기 위해)
-            double[] pixelCopy = img.getData().clone();
-            
-            samples.add(new TrainingVisualizer.ImageSample(pixelCopy, img.getLabel(), predicted));
-        }
-        return samples;
-    }
 
     public void train_test(int epochs, int batchSize) {
         long startTime = System.currentTimeMillis();// 최종 수행 시간 계산
         int timestep = 0;
 
-        System.out.println("학습 시작>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"); 
+        System.out.println("\n학습 시작>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"); 
         OutputLayer outputLayer = (OutputLayer) layers[size - 1];
 
         for (int epoch = 0; epoch < epochs; epoch++) {
@@ -199,19 +174,19 @@ public class NeuralNetwork {
                 }
                 
                 timestep++;//현재 업데이트 수
-                updateWeightsAndBiases(timestep,batchSize);
+                updateWeightsAndBiases(timestep,currentBatchSize);
             }
 
             double avgTrainLoss = currentEpochTrainLoss / trainImages.size();//평균 loss
             double avgTrainAcc = (double) currentEpochCorrect / trainImages.size();//평균 정확률
 
-            double[] testMetrics = test(testImages);
+            double[] test = test(testImages);
             
             historyTrainLoss.add(avgTrainLoss);
             historyTrainAcc.add(avgTrainAcc);
             //학습 후 평균 오차와 정확도 반환
-            historyTestLoss.add(testMetrics[0]);
-            historyTestAcc.add(testMetrics[1]);
+            historyTestLoss.add(test[0]);
+            historyTestAcc.add(test[1]);
             //test 후 평균 오차와 정확도 반환
             
             // *** 시각화용 샘플 생성 ***
@@ -221,7 +196,7 @@ public class NeuralNetwork {
             double epochTime = (epochEndTime - epochStartTime) / 1000.0;// epoch가 걸린 시간
 
             System.out.printf("\nResult -> Train Loss: %.5f, Acc: %.2f%% | Test Loss: %.5f, Acc: %.2f%% | Time: %.2fs\n", 
-                     avgTrainLoss, avgTrainAcc * 100, testMetrics[0], testMetrics[1] * 100, epochTime);
+                     avgTrainLoss, avgTrainAcc * 100, test[0], test[1] * 100, epochTime);
 
             SwingUtilities.invokeLater(() -> {
                 // 샘플 리스트도 함께 전달  
@@ -252,4 +227,31 @@ public class NeuralNetwork {
         System.out.printf("Total Training Time  : %.3f seconds\n", totalTimeSeconds);
         System.out.println("=".repeat(40));
     }
+
+    // *** 시각화용 샘플 생성 메서드 추가 ***
+    private List<TrainingVisualizer.ImageSample> generateVisualizationSamples() {
+        List<TrainingVisualizer.ImageSample> samples = new ArrayList<>();
+        Collections.shuffle(testImages); // 테스트 데이터 섞기
+        
+        // 10개만 뽑아서 예측 수행
+        int sampleSize = Math.min(10, testImages.size());
+        
+        for(int i=0; i<sampleSize; i++) {
+            Image img = testImages.get(i);
+            
+            // 순전파 수행 
+            currInput = img.getData();
+            forwardPropagation();
+            
+            double[] out = layers[size-1].getOutputs();
+            int predicted = getPredictedLabel(out);
+            
+            // 원본 데이터 복사 (화면에 그리기 위해)
+            double[] pixelCopy = img.getData().clone();
+            
+            samples.add(new TrainingVisualizer.ImageSample(pixelCopy, img.getLabel(), predicted));
+        }
+        return samples;
+    }
+ 
 }
